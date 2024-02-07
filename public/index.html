@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scraping</title>
+    <!--  -->
+    <link rel="stylesheet" href="app.css">
+    <script src="https://cdn.jsdelivr.net/npm/@textea/json-viewer@3"></script>
+    <link href='https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.css' rel='stylesheet' />
+    <script src="https://unpkg.com/maplibre-gl/dist/maplibre-gl.js"></script>
+    <script src="postmates.js"></script>
+</head>
+
+<body>
+    <div class="main-content">
+        <div id="map"></div>
+        <div id="form-output-data">
+            <h1>Ghost Kitchens</h1>
+           
+            <div id="json-viewer"></div>
+
+        </div>
+
+        
+
+    </div>
+
+    <script>
+        let app
+        const images = {
+            postmatesImage: '/icons/postmates.webp'
+        };
+
+        const initApp = () => {
+            window.app = {}
+            app = window.app
+            setJsonViewer()
+            app.submitDataUuidHashMap = {
+                'postmates': new Set()
+            }
+            app.map = new maplibregl.Map({
+                container: 'map', // container id
+                style: "https://api.maptiler.com/maps/streets-v2-light/style.json?key=SKq4TLyw9ExDKWItt7" +
+                    "IS",
+                center: [
+                    -89.29269802835559, 31.32433042588349
+                ],
+                zoom: 15.8,
+                bearing: 0,
+                pitch: 20
+            });
+
+            app.map.on('load', async () => {
+                for (const [id, url] of Object.entries(images)) {
+                    const image = await app.map.loadImage(url)
+                    app.map.addImage(id, image.data)
+                }
+                handleData(postmatesDataset)
+
+            });
+        }
+
+      
+        
+
+
+        const setJsonViewer = (data = []) => {
+            app.jsonView = new JsonViewer({
+                value: data
+            })
+
+            app.jsonView.render('#json-viewer')
+        }
+
+        function convertToGeoJSON(data) {
+            let icon = images['postmatesImage']
+            app.geojsonId += 1
+            return {
+                type: "FeatureCollection",
+                id: app.geojsonId,
+                features: data.map(item => ({
+                    type: "Feature",
+                    geometry: {
+                        type: "Point",
+                        coordinates: [item.longitude, item.latitude]
+                    },
+                    properties: {
+                        iconUrl: icon,
+                        service_type: 'postmates'
+                    }
+                }))
+            };
+        }
+        const removeSameData = (data) => {
+            const newHashMap = app.submitDataUuidHashMap['postmates'].size == 0 ? new Set() : app.submitDataUuidHashMap['postmates']
+            let dataArray = []
+            for(let item of data){
+                if(!newHashMap.has(item.uuid)){
+                    dataArray.push(item)
+                    newHashMap.add(item.uuid)
+                }
+            }
+            app.submitDataUuidHashMap['postmates'] = newHashMap
+            return dataArray
+        }
+
+
+        // Assuming 'newGeoJSON' is your new GeoJSON data and 'sourceId' is your source identifier
+
+        const handleData = async (data) => {
+                
+                let processedData = removeSameData(data)
+                setJsonViewer(data)
+
+
+                let geojson = convertToGeoJSON(data);
+                const sourceId = 'points-postmates';
+
+                // Check if the source already exists, update data if it does
+                if (app.map.getSource(sourceId)) {
+                    geojson.features.push(...app.map.getSource(sourceId)._data.features)
+                    app.map.getSource(sourceId).setData(geojson);
+                } else {
+                    app.map.addSource(sourceId, {
+                        type: 'geojson',
+                        data: geojson,
+                        cluster: true,
+                        clusterMaxZoom: 13, // Max zoom to cluster points on
+                    });
+
+                    // Add cluster layer
+
+                    const rage = {
+                        'postmates': '#757575', // black
+                    }
+
+                    app.map.addLayer({
+
+                        id: 'clusters-' + geojson.id,
+                        type: 'circle',
+                        source: sourceId,
+                        paint: {
+                            'circle-color': rage['postmates'],
+                            'circle-radius': [
+                                'step',
+                                ['get', 'point_count'],
+                                20,
+                                100,
+                                30,
+                                750,
+                                40
+                            ]
+                        }
+                    });
+
+
+                    app.map.addLayer({
+                        id: 'cluster-count-' + geojson.id,
+                        type: 'symbol',
+                        source: sourceId,
+                        filter: ['has', 'point_count'],
+                        layout: {
+                            'text-field': '{point_count_abbreviated}',
+                            'text-size': 12
+                        }
+                    });
+                    app.map.addLayer({
+                        id: 'unclustered-point-' + geojson.id,
+                        type: 'symbol',
+                        source: sourceId,
+                        filter: ['!', ['has', 'point_count']],
+                        layout: {
+                            'icon-image': 'postmatesImage',
+                            'icon-size': 0.1,
+                            'icon-allow-overlap': true
+                        }
+                    });
+                }
+            
+            }
+
+        
+
+
+        const updateMiles = (e) => {
+            if(isNaN(parseFloat(e.target.value))){
+                e.target.value = 1
+            }
+            e.target.value = e.target.value <= 0 ? 1 : e.target.value
+            console.log(e.target.value)
+            app.miles = e.target.value
+            updateArea()
+        }
+
+        const handleSubmit = (e) => {
+            e.preventDefault()
+        }
+
+        initApp()
+
+
+
+
+
+
+
+
+
+
+    </script>
+
+</body>
+
+</html>
